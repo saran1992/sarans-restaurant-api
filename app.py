@@ -8,6 +8,7 @@ from flask_jwt_extended import JWTManager, jwt_required, create_access_token
 app = Flask(__name__)
 basedir = os.path.abspath(os.path.dirname(__file__))
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///' + os.path.join(basedir,'db/restaurant.db')
+app.config['JWT_SECRET_KEY'] = os.environ.get('JWT_SECRET_KEY')
 
 db = SQLAlchemy(app)
 ma = Marshmallow(app)
@@ -28,7 +29,7 @@ def db_seed():
     pizza = Dish(name = "pizza",
                  price = 59.99,
                  rating = 5,
-                 number_of_reviews = 0)
+                 number_of_reviews = 1)
     db.session.add(pizza)
     db.session.commit()
     print("DB seeded!")
@@ -83,6 +84,36 @@ def register():
         db.session.add(user)
         db.session.commit()
         return jsonify(message = "User created successfully!")
+
+@app.route('/add_rating/<int:id>',methods = ['POST'])
+def add_rating(id:int):
+    dish = Dish.query.filter_by(id=id).first()
+    if dish:
+        dish_obj = dish_schema.dump(dish)
+        current_rating = dish_obj['rating']
+        number_of_reviews = dish_obj['number_of_reviews']
+        print('Existing Rating is: '+str(current_rating))
+        new_rating = ((current_rating * number_of_reviews) + request.json['rating']) / (number_of_reviews + 1)
+        dish.rating = new_rating
+        dish.number_of_reviews = number_of_reviews + 1
+        db.session.commit()
+        return jsonify(message = "Rating has been successfully updated")
+    else:
+        return jsonify(message = "Dish not found") , 404
+
+@app.route('/add_dish', methods = ['POST'])
+@jwt_required()
+def add_dish():
+    new_dish_name = request.form['name'].lower()
+    is_existing = Dish.query.filter_by(name = new_dish_name).first()
+    if is_existing:
+        return jsonify(message = 'Already exists') , 409
+    else:
+        price = request.form['price']
+        new_dish = Dish(name = new_dish_name,price = price , rating = 5 , number_of_reviews = 1)
+        db.session.add(new_dish)
+        db.session.commit()
+        return jsonify(message = "New dish added successfully")
 
 # Database models
 class User(db.Model):
